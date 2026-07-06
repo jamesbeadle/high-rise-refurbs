@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-navy-950 text-ivory font-sans antialiased;
+}
+
+::selection {
+  background: #c9a44c;
+  color: #0b1322;
+}
+
+@layer components {
+  /* Small-caps letterspaced label */
+  .eyebrow {
+    @apply font-sans text-[0.7rem] font-medium uppercase tracking-widest2 text-gold;
+  }
+
+  /* Primary display heading */
+  .display {
+    @apply font-serif font-medium leading-[1.05] text-ivory;
+  }
+
+  /* Hairline in brand gold, low opacity */
+  .hairline {
+    @apply border-gold/25;
+  }
+
+  .btn-gold {
+    @apply inline-block border border-gold bg-gold px-8 py-3.5 text-[0.72rem] font-semibold uppercase tracking-widest2 text-navy-950 transition-colors duration-300 hover:bg-transparent hover:text-gold;
+  }
+
+  .btn-ghost {
+    @apply inline-block border border-gold/40 px-8 py-3.5 text-[0.72rem] font-semibold uppercase tracking-widest2 text-ivory transition-colors duration-300 hover:border-gold hover:text-gold;
+  }
+
+  .link-quiet {
+    @apply text-mist transition-colors duration-200 hover:text-gold;
+  }
+
+  /* The golden thread — a fine vertical gradient line used as a section connector */
+  .thread-v {
+    width: 1px;
+    background: linear-gradient(
+      to bottom,
+      transparent,
+      rgba(201, 164, 76, 0.75) 18%,
+      rgba(201, 164, 76, 0.75) 82%,
+      transparent
+    );
+  }
+}
