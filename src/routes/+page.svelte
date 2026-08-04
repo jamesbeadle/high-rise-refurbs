@@ -1,7 +1,7 @@
 <script>
   import Corners from '$lib/components/Corners.svelte';
   import Rule from '$lib/components/Rule.svelte';
-  import Skyline from '$lib/components/Skyline.svelte';
+  import Skyline3D from '$lib/components/Skyline3D.svelte';
   import { services } from '$lib/data/services.js';
 
   const stats = [
@@ -68,10 +68,11 @@
         <a href="/services" class="btn-gold">Explore our services</a>
         <a href="/contact" class="btn-ghost">Arrange a consultation</a>
       </div>
-
-      <Skyline class="mx-auto mt-10 w-full max-w-5xl" />
     </div>
   </div>
+
+  <!-- interactive 3D London skyline — full-bleed, drawn in brand-gold linework -->
+  <Skyline3D class="relative mt-4 h-72 w-full sm:h-80 md:h-[26rem]" />
 </section>
 
 <!-- ============ STATS ============ -->

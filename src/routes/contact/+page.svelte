@@ -13,7 +13,7 @@
     const body = encodeURIComponent(
       `Name: ${name}\nEmail: ${email}\nBuilding / portfolio: ${building}\n\n${message}`
     );
-    window.location.href = `mailto:enquiries@highriserefurbishments.co.uk?subject=${subject}&body=${body}`;
+    window.location.href = `mailto:enquiries@hrrltd.co.uk?subject=${subject}&body=${body}`;
   }
 
   const inputClass =
@@ -46,10 +46,10 @@
     <div>
       <p class="eyebrow">Enquiries</p>
       <a
-        href="mailto:enquiries@highriserefurbishments.co.uk"
+        href="mailto:enquiries@hrrltd.co.uk"
         class="link-quiet mt-4 block font-serif text-xl text-ivory"
       >
-        enquiries@highriserefurbishments.co.uk
+        enquiries@hrrltd.co.uk
       </a>
 
       <p class="eyebrow mt-12">Telephone</p>

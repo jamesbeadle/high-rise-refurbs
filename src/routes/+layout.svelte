@@ -14,7 +14,18 @@
 
   const isActive = (href) =>
     href === '/' ? page.url.pathname === '/' : page.url.pathname.startsWith(href);
+
+  const SITE = 'https://hrrltd.co.uk';
+  const canonical = $derived(SITE + (page.url.pathname === '/' ? '' : page.url.pathname));
 </script>
+
+<svelte:head>
+  <link rel="canonical" href={canonical} />
+  <meta property="og:site_name" content="High Rise Refurbishments Ltd" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content={canonical} />
+  <meta property="og:image" content="{SITE}/logo-full.png" />
+</svelte:head>
 
 <div class="flex min-h-screen flex-col bg-navy-950 text-ivory">
   <!-- gold hairline across the very top -->
@@ -115,8 +126,8 @@
             <li><a href="/contact" class="link-quiet">Contact</a></li>
           </ul>
           <p class="eyebrow mb-4 mt-10">Enquiries</p>
-          <a href="mailto:enquiries@highriserefurbishments.co.uk" class="link-quiet text-sm">
-            enquiries@highriserefurbishments.co.uk
+          <a href="mailto:enquiries@hrrltd.co.uk" class="link-quiet text-sm">
+            enquiries@hrrltd.co.uk
           </a>
         </div>
       </div>

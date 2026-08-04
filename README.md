@@ -5,6 +5,16 @@ built with SvelteKit 2 + Svelte 5 + Tailwind CSS v3. Dark-luxury design system: 
 brand gold `#c9a44c`, Cormorant Garamond display + Inter body.
 Deployed on Vercel (`@sveltejs/adapter-vercel`). No backend yet — Supabase can be added later.
 
+**Domain:** `hrrltd.co.uk` — canonical URLs and `enquiries@hrrltd.co.uk` are wired in;
+point the domain at the Vercel project under **Settings → Domains** at launch.
+
+**3D hero:** the homepage hero renders an interactive Three.js London skyline
+(`src/lib/components/Skyline3D.svelte`) — gold wireframe towers (Shard, Gherkin,
+One Canada Square, BT Tower) with camera drift, mouse parallax, scroll response,
+twinkling windows and floating dust. SSR-safe (dynamic import on mount), pauses
+offscreen, honours `prefers-reduced-motion`, and falls back to the flat SVG
+skyline (`Skyline.svelte`) when WebGL is unavailable.
+
 ## Stack
 
 - **SvelteKit 2** / **Svelte 5** (runes)
