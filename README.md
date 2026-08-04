@@ -8,12 +8,15 @@ Deployed on Vercel (`@sveltejs/adapter-vercel`). No backend yet — Supabase can
 **Domain:** `hrrltd.co.uk` — canonical URLs and `enquiries@hrrltd.co.uk` are wired in;
 point the domain at the Vercel project under **Settings → Domains** at launch.
 
-**3D hero:** the homepage hero renders an interactive Three.js London skyline
-(`src/lib/components/Skyline3D.svelte`) — gold wireframe towers (Shard, Gherkin,
-One Canada Square, BT Tower) with camera drift, mouse parallax, scroll response,
-twinkling windows and floating dust. SSR-safe (dynamic import on mount), pauses
-offscreen, honours `prefers-reduced-motion`, and falls back to the flat SVG
-skyline (`Skyline.svelte`) when WebGL is unavailable.
+**Cinematic 3D landing:** the homepage runs a full-viewport Three.js London
+(`src/lib/components/Skyline3D.svelte`) behind the whole page — gold wireframe
+towers (Shard, Gherkin, One Canada Square, BT Tower) rise on load and window
+lights flicker on. Scrolling flies the camera from street level up over the city and
+back to the horizon while content glides over on translucent glass panels;
+mouse parallax and drift run throughout. Three.js is vendored in
+`src/lib/vendor/` (no npm install needed). SSR-safe, pauses offscreen,
+honours `prefers-reduced-motion`, and falls back to the flat SVG skyline
+(`Skyline.svelte`) when WebGL is unavailable.
 
 ## Stack
 

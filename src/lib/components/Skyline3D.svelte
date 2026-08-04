@@ -1,19 +1,23 @@
 <script>
-  // @ts-nocheck — creative WebGL code; three is imported dynamically so types don't resolve
+  // @ts-nocheck — creative WebGL code; three is vendored so types don't resolve
   /**
-   * Full 3D London skyline — fine gold linework on navy, rendered with Three.js.
+   * Cinematic 3D London — a full-viewport Three.js scene that lives behind the
+   * entire homepage.
    *
-   * - Depth-layered tower clusters with Shard / Gherkin / Canary Wharf silhouettes
-   * - Slow cinematic camera drift + mouse parallax + subtle scroll response
-   * - Twinkling window lights and floating golden dust
-   * - SSR-safe (Three.js is imported dynamically on mount)
-   * - Respects prefers-reduced-motion (renders a still frame)
-   * - Falls back to the flat SVG skyline if WebGL is unavailable
+   * On load:  towers rise from the ground in a staggered sweep, then the
+   *           window lights flicker on across the city.
+   * On scroll: the camera flies a curved path — from street level among the
+   *           towers, up and over the city (revealing the ground grid from
+   *           above), then back down to the horizon for the closing CTA.
+   *           The city also slowly orbits as you descend. Content sections
+   *           glide over the scene on translucent glass panels.
+   * Always:   slow drift, eased mouse parallax, twinkling windows, gold dust.
+   *
+   * SSR-safe (vendored Three.js imported on mount), pauses offscreen/hidden,
+   * honours prefers-reduced-motion, falls back to the flat SVG skyline.
    */
   import { onMount } from 'svelte';
   import Skyline from './Skyline.svelte';
-
-  let { class: klass = '' } = $props();
 
   let container;
   let ready = $state(false);
@@ -39,7 +43,7 @@
 
       let renderer;
       try {
-        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
       } catch {
         failed = true;
         return;
@@ -47,16 +51,14 @@
 
       const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-      renderer.setClearColor(0x000000, 0); // transparent — page navy shows through
+      renderer.setClearColor(0x000000, 0);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.domElement.style.cssText =
-        'position:absolute;inset:0;width:100%;height:100%;display:block;opacity:0;transition:opacity 1.4s ease';
+        'position:absolute;inset:0;width:100%;height:100%;display:block;opacity:0;transition:opacity .9s ease';
       container.appendChild(renderer.domElement);
 
       const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 900);
-      const CAM_BASE = { x: 0, y: 30, z: 185 };
-      camera.position.set(CAM_BASE.x, CAM_BASE.y, CAM_BASE.z);
+      const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 1200);
 
       const city = new THREE.Group();
       scene.add(city);
@@ -71,80 +73,81 @@
       const rand = mulberry32(20260804);
 
       const disposables = [];
-      const track = (obj) => { disposables.push(obj); return obj; };
+      const track = (o) => { disposables.push(o); return o; };
+      const v3 = (x, y, z) => new THREE.Vector3(x, y, z);
 
-      const lineMat = (opacity, color = GOLD) =>
-        track(new THREE.LineBasicMaterial({ color, transparent: true, opacity }));
+      const lineMat = (opacity, color = GOLD, additive = false) =>
+        track(new THREE.LineBasicMaterial({
+          color, transparent: true, opacity,
+          blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+          depthWrite: !additive
+        }));
 
-      const addEdges = (geometry, material, x, y, z, ry = 0) => {
-        const edges = track(new THREE.EdgesGeometry(geometry, 12));
-        geometry.dispose();
-        const lines = new THREE.LineSegments(edges, material);
-        lines.position.set(x, y, z);
-        lines.rotation.y = ry;
-        city.add(lines);
-        return lines;
+      // ---- buildings rise from the ground: each lives in a group we scale ----
+      const buildings = [];
+      const buildingGroup = (x, z) => {
+        const g = new THREE.Group();
+        g.position.set(x, 0, z);
+        // stagger: centre rises first, edges follow like a wave
+        g.userData.delay = 0.15 + (Math.abs(x) / 340) * 0.9 + (Math.abs(z) / 300) * 0.5 + rand() * 0.35;
+        if (!reduceMotion) g.scale.y = 0.001;
+        city.add(g);
+        buildings.push(g);
+        return g;
       };
 
-      // ---- floor lines (storeys) on a facade ----
-      const floorLines = (w, h, d, x, z, material) => {
+      const addEdges = (group, geometry, material, lift = 0) => {
+        geometry.translate(0, lift, 0); // base at ground so scale.y grows upward
+        const edges = track(new THREE.EdgesGeometry(geometry, 12));
+        geometry.dispose();
+        group.add(new THREE.LineSegments(edges, material));
+      };
+
+      const floorLines = (group, w, h, d, material) => {
         const pts = [];
-        const step = 6.5;
-        for (let y = step; y < h - 2; y += step) {
-          pts.push(-w / 2, y, d / 2 + 0.01, w / 2, y, d / 2 + 0.01);
-        }
+        for (let y = 6.5; y < h - 2; y += 6.5) pts.push(-w / 2, y, d / 2 + 0.01, w / 2, y, d / 2 + 0.01);
         if (!pts.length) return;
         const geo = track(new THREE.BufferGeometry());
         geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-        const seg = new THREE.LineSegments(geo, material);
-        seg.position.set(x, 0, z);
-        city.add(seg);
+        group.add(new THREE.LineSegments(geo, material));
       };
 
-      // ---- window lights (points on facades, twinkled in the loop) ----
+      // ---- window lights, collected globally, switched on after the rise ----
       const windowPts = [];
       const sprinkleWindows = (w, h, d, x, z, count) => {
         for (let i = 0; i < count; i++) {
-          windowPts.push(
-            x - w / 2 + rand() * w,
-            4 + rand() * (h - 8),
-            z + d / 2 + 0.3
-          );
+          const face = rand();
+          if (face < 0.6) windowPts.push(x - w / 2 + rand() * w, 4 + rand() * (h - 8), z + d / 2 + 0.3);
+          else windowPts.push(x + (rand() < 0.5 ? -1 : 1) * (w / 2 + 0.3), 4 + rand() * (h - 8), z - d / 2 + rand() * d);
         }
       };
 
-      // ---- generic tower ----
       const tower = (x, z, w, h, d, mat, { floors = null, windows = 0, crown = false } = {}) => {
-        addEdges(new THREE.BoxGeometry(w, h, d), mat, x, h / 2, z);
-        if (floors) floorLines(w, h, d, x, z, floors);
+        const g = buildingGroup(x, z);
+        addEdges(g, new THREE.BoxGeometry(w, h, d), mat, h / 2);
+        if (floors) floorLines(g, w, h, d, floors);
         if (windows) sprinkleWindows(w, h, d, x, z, windows);
-        if (crown) {
-          // slim rooftop plant / spire
-          addEdges(new THREE.BoxGeometry(w * 0.4, 6, d * 0.4), mat, x, h + 3, z);
-        }
+        if (crown) addEdges(g, new THREE.BoxGeometry(w * 0.4, 6, d * 0.4), mat, h + 3);
       };
 
-      // ---- The Shard — tapered 4-sided spire ----
+      // ---- landmarks ----
       const shard = (x, z, mat) => {
+        const g = buildingGroup(x, z);
         const geo = new THREE.ConeGeometry(13, 132, 4, 1, true);
         geo.rotateY(Math.PI / 4);
-        addEdges(geo, mat, x, 66, z);
-        // glazing seams
+        addEdges(g, geo, mat, 66);
         const pts = [];
         for (const t of [0.28, 0.52, 0.74]) {
           const r = 13 * (1 - t) * Math.SQRT2 * 0.5;
-          const y = 132 * t;
-          pts.push(-r, y, r, r, y, r);
+          pts.push(-r, 132 * t, r, r, 132 * t, r);
         }
-        const g = track(new THREE.BufferGeometry());
-        g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-        const seg = new THREE.LineSegments(g, mat);
-        seg.position.set(x, 0, z);
-        city.add(seg);
+        const sg = track(new THREE.BufferGeometry());
+        sg.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+        g.add(new THREE.LineSegments(sg, mat));
       };
 
-      // ---- The Gherkin — lathe profile with radial ribs ----
       const gherkin = (x, z, mat) => {
+        const g = buildingGroup(x, z);
         const profile = [];
         const H = 66, R = 11;
         for (let i = 0; i <= 12; i++) {
@@ -152,39 +155,39 @@
           const r = R * Math.sin(Math.pow(t, 0.72) * Math.PI) * (1 - t * 0.12) + 0.6;
           profile.push(new THREE.Vector2(Math.max(r, 0.4), t * H));
         }
-        const geo = new THREE.LatheGeometry(profile, 10);
-        addEdges(geo, mat, x, 0, z);
+        addEdges(g, new THREE.LatheGeometry(profile, 10), mat, 0);
       };
 
-      // ---- One Canada Square — slab with pyramid roof ----
       const canary = (x, z, mat, floors) => {
-        tower(x, z, 26, 88, 26, mat, { floors });
+        const g = buildingGroup(x, z);
+        addEdges(g, new THREE.BoxGeometry(26, 88, 26), mat, 44);
+        if (floors) floorLines(g, 26, 88, 26, floors);
         const pyr = new THREE.ConeGeometry(15, 16, 4, 1);
         pyr.rotateY(Math.PI / 4);
-        addEdges(pyr, mat, x, 96, z);
+        addEdges(g, pyr, mat, 96);
+        sprinkleWindows(26, 88, 26, x, z, 14);
       };
 
-      // ---- BT Tower-ish cylinder ----
       const btTower = (x, z, mat) => {
-        addEdges(new THREE.CylinderGeometry(5, 5, 92, 10, 1, true), mat, x, 46, z);
-        addEdges(new THREE.CylinderGeometry(6.5, 6.5, 5, 10, 1, true), mat, x, 72, z);
+        const g = buildingGroup(x, z);
+        addEdges(g, new THREE.CylinderGeometry(5, 5, 92, 10, 1, true), mat, 46);
+        addEdges(g, new THREE.CylinderGeometry(6.5, 6.5, 5, 10, 1, true), mat, 72);
       };
 
-      // ---- depth layers: front is brightest, back fades into the navy ----
+      // ---- depth layers — front brightest (additive glow), back fades away ----
       const layers = [
-        { z: 0,    opacity: 0.55, floors: 0.16, n: 11, spread: 330, hMin: 22, hMax: 66 },
-        { z: -70,  opacity: 0.3,  floors: 0.1,  n: 13, spread: 420, hMin: 30, hMax: 92 },
-        { z: -150, opacity: 0.17, floors: 0,    n: 15, spread: 520, hMin: 36, hMax: 110 },
-        { z: -240, opacity: 0.09, floors: 0,    n: 16, spread: 620, hMin: 40, hMax: 120 }
+        { z: 0,    opacity: 0.6,  floors: 0.18, n: 11, spread: 330, hMin: 22, hMax: 66,  windows: 9,  add: true },
+        { z: -70,  opacity: 0.34, floors: 0.11, n: 13, spread: 420, hMin: 30, hMax: 92,  windows: 7,  add: true },
+        { z: -150, opacity: 0.18, floors: 0,    n: 15, spread: 520, hMin: 36, hMax: 110, windows: 4,  add: false },
+        { z: -240, opacity: 0.1,  floors: 0,    n: 16, spread: 620, hMin: 40, hMax: 120, windows: 0,  add: false }
       ];
 
       layers.forEach((L, li) => {
-        const mat = lineMat(L.opacity);
+        const mat = lineMat(L.opacity, GOLD, L.add);
         const fMat = L.floors ? lineMat(L.floors) : null;
         for (let i = 0; i < L.n; i++) {
           const x = -L.spread / 2 + (i + 0.5) * (L.spread / L.n) + (rand() - 0.5) * 18;
-          // keep a gap in the front-centre so landmarks read clearly
-          if (li === 0 && Math.abs(x) < 34) continue;
+          if (li === 0 && Math.abs(x) < 34) continue; // keep front-centre open for landmarks
           const centrality = 1 - Math.min(Math.abs(x) / (L.spread / 2), 1);
           const h = L.hMin + (L.hMax - L.hMin) * (0.35 + 0.65 * centrality) * (0.6 + rand() * 0.4);
           const w = 10 + rand() * 14;
@@ -192,69 +195,76 @@
           const z = L.z + (rand() - 0.5) * 24;
           tower(x, z, w, h, d, mat, {
             floors: fMat,
-            windows: li <= 1 ? Math.round(3 + rand() * 7) : 0,
+            windows: L.windows ? Math.round(L.windows * (0.5 + rand())) : 0,
             crown: rand() > 0.72
           });
         }
       });
 
-      // landmarks — mid-stage, slightly brighter than their row
-      const landmarkMat = lineMat(0.42, GOLD_LIGHT);
+      const landmarkMat = lineMat(0.5, GOLD_LIGHT, true);
       shard(-52, -46, landmarkMat);
       gherkin(38, -58, landmarkMat);
-      canary(112, -104, lineMat(0.26), null);
-      btTower(-138, -96, lineMat(0.24));
+      canary(112, -104, lineMat(0.3, GOLD, true), null);
+      btTower(-138, -96, lineMat(0.26));
 
-      // ---- ground grid — perspective floor ----
-      const grid = new THREE.GridHelper(760, 34, GOLD, GOLD);
+      // ---- ground grid — reads beautifully when the camera flies overhead ----
+      const grid = new THREE.GridHelper(900, 44, GOLD, GOLD);
       grid.material.transparent = true;
-      grid.material.opacity = 0.05;
-      grid.position.y = 0;
-      track(grid.material);
-      track(grid.geometry);
+      grid.material.opacity = 0.07;
+      track(grid.material); track(grid.geometry);
       scene.add(grid);
 
-      // baseline
-      {
-        const g = track(new THREE.BufferGeometry());
-        g.setAttribute('position', new THREE.Float32BufferAttribute([-380, 0, 20, 380, 0, 20], 3));
-        scene.add(new THREE.Line(g, lineMat(0.3)));
-      }
-
-      // ---- window lights ----
+      // ---- window lights (switch on after the towers rise) ----
       let windows = null;
       if (windowPts.length) {
         const g = track(new THREE.BufferGeometry());
         g.setAttribute('position', new THREE.Float32BufferAttribute(windowPts, 3));
         const m = track(new THREE.PointsMaterial({
-          color: GOLD_LIGHT, size: 1.6, sizeAttenuation: true,
-          transparent: true, opacity: 0.55, depthWrite: false
+          color: GOLD_LIGHT, size: 1.7, sizeAttenuation: true,
+          transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending
         }));
         windows = new THREE.Points(g, m);
-        city.add(windows);
+        scene.add(windows);
       }
 
       // ---- floating golden dust ----
-      const DUST_N = 90;
+      const DUST_N = 160;
       const dustPos = new Float32Array(DUST_N * 3);
       for (let i = 0; i < DUST_N; i++) {
-        dustPos[i * 3] = (rand() - 0.5) * 420;
-        dustPos[i * 3 + 1] = rand() * 130;
-        dustPos[i * 3 + 2] = -30 - rand() * 160;
+        dustPos[i * 3] = (rand() - 0.5) * 500;
+        dustPos[i * 3 + 1] = rand() * 160;
+        dustPos[i * 3 + 2] = -40 - rand() * 200;
       }
       const dustGeo = track(new THREE.BufferGeometry());
       dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
       const dustMat = track(new THREE.PointsMaterial({
-        color: GOLD, size: 1.1, sizeAttenuation: true,
-        transparent: true, opacity: 0.28, depthWrite: false
+        color: GOLD, size: 1.2, sizeAttenuation: true,
+        transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending
       }));
       const dust = new THREE.Points(dustGeo, dustMat);
       scene.add(dust);
 
-      // ---- interaction state ----
+      // ---- scroll-driven camera path: street → overhead → horizon ----
+      const camPath = new THREE.CatmullRomCurve3([
+        v3(0, 30, 165),    // hero: among the towers
+        v3(-45, 105, 185), // rising, banking left
+        v3(40, 175, 120),  // overhead — the grid revealed
+        v3(90, 110, 200),  // sweeping back down
+        v3(0, 46, 230)     // closing CTA: calm horizon
+      ]);
+      const lookPath = new THREE.CatmullRomCurve3([
+        v3(0, 58, -60), v3(0, 45, -70), v3(0, 0, -90), v3(0, 30, -70), v3(0, 66, -50)
+      ]);
+
+      // ---- animation state ----
+      const easeOutCubic = (x) => 1 - Math.pow(1 - x, 3);
+      const easeInOut = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+      const clamp01 = (x) => Math.min(Math.max(x, 0), 1);
+
       const mouse = { x: 0, y: 0 };
       const eased = { x: 0, y: 0 };
-      let scrollY = 0;
+      let scrollP = 0;      // raw scroll progress 0..1 over the page
+      let smoothP = 0;      // eased version the camera follows
       let visible = true;
       let raf = 0;
 
@@ -262,7 +272,11 @@
         mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
         mouse.y = (e.clientY / window.innerHeight) * 2 - 1;
       };
-      const onScroll = () => { scrollY = window.scrollY; };
+      const onScroll = () => {
+        const max = Math.max(document.documentElement.scrollHeight - window.innerHeight, 1);
+        scrollP = clamp01(window.scrollY / max);
+      };
+      onScroll();
 
       const resize = () => {
         const w = container.clientWidth || 1;
@@ -273,31 +287,59 @@
       };
       resize();
 
+      const INTRO_CAM = v3(0, 12, 78);
+      const INTRO_LOOK = v3(0, 85, -30);
+      const camPos = new THREE.Vector3();
+      const lookAt = new THREE.Vector3();
       const clock = new THREE.Clock();
 
       const renderFrame = () => {
         const t = clock.getElapsedTime();
 
-        // cinematic drift
-        const driftX = Math.sin(t * 0.045) * 10;
-        const driftY = Math.sin(t * 0.08) * 1.6;
+        // -- intro choreography --
+        const introT = reduceMotion ? 1 : easeInOut(clamp01((t - 0.1) / 2.6));
+        if (!reduceMotion) {
+          for (const g of buildings) {
+            g.scale.y = Math.max(easeOutCubic(clamp01((t - g.userData.delay) / 1.2)), 0.001);
+          }
+          // windows flicker on once the city is up
+          if (windows) {
+            const on = clamp01((t - 1.9) / 1.2);
+            windows.material.opacity = on * (0.5 + Math.sin(t * 1.7) * 0.1 + Math.sin(t * 3.3 + 1) * 0.05);
+          }
+        } else if (windows) {
+          windows.material.opacity = 0.5;
+        }
 
-        // mouse parallax (eased)
-        eased.x += (mouse.x - eased.x) * 0.028;
-        eased.y += (mouse.y - eased.y) * 0.028;
+        // -- scroll-driven flight --
+        smoothP += (scrollP - smoothP) * 0.055;
+        const p = clamp01(smoothP);
+        camPath.getPointAt(p, camPos);
+        lookPath.getPointAt(p, lookAt);
 
-        camera.position.x = CAM_BASE.x + driftX + eased.x * 14;
-        camera.position.y = Math.max(CAM_BASE.y + driftY - eased.y * 6 + scrollY * 0.028, 12);
-        camera.position.z = CAM_BASE.z;
-        camera.lookAt(0, 52 + scrollY * 0.012, -60);
+        // blend from the intro dolly into the flight path
+        camPos.lerpVectors(INTRO_CAM, camPos, introT);
+        lookAt.lerpVectors(INTRO_LOOK, lookAt, introT);
 
-        // gentle scene breathing
-        city.rotation.y = Math.sin(t * 0.03) * 0.012;
+        // drift + mouse parallax
+        eased.x += (mouse.x - eased.x) * 0.03;
+        eased.y += (mouse.y - eased.y) * 0.03;
+        camPos.x += Math.sin(t * 0.05) * 9 + eased.x * 18;
+        camPos.y += Math.sin(t * 0.085) * 2 - eased.y * 9;
 
-        // twinkle + dust
-        if (windows) windows.material.opacity = 0.45 + Math.sin(t * 1.7) * 0.1 + Math.sin(t * 3.3 + 1) * 0.05;
+        camera.position.copy(camPos);
+        camera.lookAt(lookAt);
+
+        // the city slowly orbits beneath you as you descend the page
+        city.rotation.y = Math.sin(t * 0.03) * 0.012 + p * 0.22;
+        grid.rotation.y = city.rotation.y;
+
         dust.position.y = Math.sin(t * 0.12) * 3;
         dust.rotation.y = t * 0.008;
+
+        // dim while reading, bright in the hero, warm again at the close
+        const fade = p < 0.08 ? 1 : p < 0.3 ? 1 - ((p - 0.08) / 0.22) * 0.55 : p > 0.86 ? 0.45 + ((p - 0.86) / 0.14) * 0.35 : 0.45;
+        renderer.domElement.style.opacity = String(fade);
 
         renderer.render(scene, camera);
       };
@@ -307,18 +349,20 @@
         renderFrame();
       };
 
-      // first frame, then fade the canvas in over the SVG fallback
       renderFrame();
-      renderer.domElement.style.opacity = '1';
       ready = true;
 
       if (!reduceMotion) {
         window.addEventListener('mousemove', onMouse, { passive: true });
         window.addEventListener('scroll', onScroll, { passive: true });
         loop();
+      } else {
+        window.addEventListener('scroll', onScroll, { passive: true });
+        // still follow scroll (single frames), just without continuous animation
+        const onScrollFrame = () => renderFrame();
+        window.addEventListener('scroll', onScrollFrame, { passive: true });
       }
 
-      // pause when offscreen / tab hidden
       const io = new IntersectionObserver(([entry]) => {
         visible = entry.isIntersecting;
         if (reduceMotion) return;
@@ -344,9 +388,7 @@
         document.removeEventListener('visibilitychange', onVis);
         window.removeEventListener('mousemove', onMouse);
         window.removeEventListener('scroll', onScroll);
-        scene.traverse((o) => {
-          if (o.geometry) o.geometry.dispose();
-        });
+        scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
         disposables.forEach((d) => d.dispose && d.dispose());
         renderer.dispose();
         renderer.domElement.remove();
@@ -360,7 +402,8 @@
   });
 </script>
 
-<div bind:this={container} class="relative {klass}" aria-hidden="true">
+<!-- fixed, full-viewport, behind everything; content glides over it -->
+<div bind:this={container} class="pointer-events-none fixed inset-0 z-0" aria-hidden="true">
   {#if !ready || failed}
     <!-- SVG skyline as loading state / no-WebGL fallback -->
     <div class="absolute inset-x-0 bottom-0">
